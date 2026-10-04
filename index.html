@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#dedede"><meta name="description" content="録音・再生・ループ。手のひらのターンテーブル。">
+  <title>LOOP ROOM</title><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5v14M17 5v14" stroke-width="4" stroke-linecap="butt"/></symbol>
+    <symbol id="i-rewind" viewBox="0 0 24 24"><path d="m12 6-8 6 8 6Zm8 0-8 6 8 6Z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 4 5 5-11 11H4v-5ZM13 6l5 5"/></symbol>
+  </defs></svg>
+  <main class="app-shell">
+    <button id="open-options" class="menu-button" aria-label="録音一覧を開く" aria-haspopup="dialog"><svg class="icon"><use href="#i-menu"/></svg></button>
+    <h1 class="sr-only">LOOP ROOM</h1>
+    <section class="deck" aria-label="ターンテーブル">
+      <span class="status sr-only" id="status" role="status"><i></i><span>待機</span></span>
+      <div class="record-area"><button id="vinyl" class="vinyl" aria-label="盤を回してスクラッチ"><span id="platter-time" class="platter-time" aria-hidden="true">00:00</span></button></div>
+
+      <div class="transport">
+        <button id="record" class="transport-button record"><span class="record-dot"></span><span class="sr-only">録音</span></button>
+        <button id="play" class="transport-button play"><svg class="icon"><use href="#i-play"/></svg><span class="sr-only">再生</span></button>
+        <button id="stop" class="transport-button stop" aria-label="停止して最初へ"><svg class="icon"><use href="#i-stop"/></svg></button>
+        <button id="rewind" class="transport-button rewind" aria-label="巻き戻し（押している間）" aria-pressed="false"><svg class="icon"><use href="#i-rewind"/></svg></button>
+      </div>
+      <div class="speed-control"><button id="speed-reset" aria-label="再生速度を1.00倍に戻す"><span id="speed-value">1.00×</span></button><input id="speed" type="range" min="-2" max="2" step="0.01" value="0" aria-label="再生速度" aria-orientation="vertical" aria-valuetext="1.00倍"></div>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+  <dialog id="options-dialog">
+    <div class="dialog-heading"><h2>録音一覧</h2><button id="close-options" class="icon-button" aria-label="閉じる">×</button></div>
+    <div class="track-line"><button id="menu-play" class="menu-play" aria-label="選択した曲を再生"><svg class="icon"><use href="#i-play"/></svg></button><h2 id="track-title">Discourse on the Method</h2><span id="time" class="time">00:00 <small>/ 03:32</small></span></div>
+      <input id="seek" class="seek" type="range" min="0" max="1000" value="0" aria-label="再生位置">
+    <div class="section-heading"><h3>録音一覧</h3><span id="session-count">01</span></div><div id="sessions" class="sessions"></div>
+    <button id="import-button" class="import-button">音声を読み込む ＋</button><input type="file" id="import-file" accept="audio/*" hidden>
+  </dialog>
+  <dialog id="rename-dialog">
+    <form id="rename-form">
+      <label for="rename-name">録音名を変更</label>
+      <input id="rename-name" type="text" maxlength="80" required autocomplete="off">
+      <div class="rename-actions"><button id="cancel-rename" type="button">キャンセル</button><button id="save-rename" type="submit">保存</button></div>
+    </form>
+  </dialog>
+  <audio id="player" preload="auto" hidden></audio>
+  <audio id="reverse-player" preload="auto" hidden></audio>
+  <script src="./app.js"></script>
+  
+</body>
+</html>
+
+
+
+
+
