@@ -131,9 +131,9 @@ async function selectTrack(id) {
     for (const other of tracks) if (other !== track) delete other.buffer;
     playbackBuffer = null; player.removeAttribute('src'); player.load();
     if (playbackUrl) { URL.revokeObjectURL(playbackUrl); playbackUrl = null; }
+    renderWaveforms();
     await warmReversePlayback();
     await prepareScratchPlayback();
-    renderWaveforms();
     $('track-title').replaceChildren(document.createTextNode(track.name)); renderSessions();
   } finally { busy = false; update(); }
 }
@@ -202,7 +202,7 @@ function rotationAngle(elapsed) { return elapsed * 90; }
 function scratchDelta(previous, next) { return ((next - previous + 540) % 360) - 180; }
 async function prepareScratchPlayback() {
   setupAudio();
-  if (!scratchModule) scratchModule = context.audioWorklet.addModule(new URL('scratch-worklet.js', document.baseURI).href).catch(error => { scratchModule = null; throw error; });
+  if (!scratchModule) scratchModule = context.audioWorklet.addModule(new URL('scratch-worklet.js?v=20261005-2', document.baseURI).href).catch(error => { scratchModule = null; throw error; });
   await scratchModule;
   if (!scratchNode) {
     scratchNode = new AudioWorkletNode(context, 'turntable-scratch', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
@@ -419,9 +419,9 @@ async function init() {
     const reverseBlob = await reverseResponse.blob();
     buffer = await decodeTrack(blob);
     tracks = [{ id: 'demo', name: 'Discourse on the Method', duration: buffer.duration, blob, buffer, reverseBlob }];
+    renderWaveforms();
     await warmReversePlayback();
     await prepareScratchPlayback();
-    renderWaveforms();
     $('track-title').textContent = tracks[0].name; renderSessions();
   } finally { busy = false; update(); }
   try { db = await openDatabase(); const saved = await database('readonly', store => store.getAll()); tracks.push(...saved.sort((a, b) => a.date - b.date)); renderSessions(); } catch { toast('端末への保存が使えません。録音後は音声をダウンロードしてください。'); }

@@ -14,9 +14,9 @@ button:disabled{cursor:wait}
 .deck{display:grid;grid-template-columns:var(--disc) var(--rail);grid-template-rows:calc(var(--unit) * 80) var(--disc) var(--control);column-gap:calc(var(--unit) * 16);row-gap:calc(var(--unit) * 28);align-items:center;justify-items:center}
 .deck button:focus-visible,.deck input:focus-visible{outline-width:calc(var(--unit) * 2);outline-offset:calc(var(--unit) * 6)}
 .waveform-seek{grid-column:1 / -1;grid-row:1;position:relative;width:100%;height:calc(var(--unit) * 80)}
-.waveform-lanes{position:absolute;inset:0 calc(var(--unit) * 6);display:grid;grid-template-rows:1fr 1fr}
+.waveform-lanes{position:absolute;inset:0 calc(var(--unit) * 6);display:grid;grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
 .waveform-lanes::after{content:'';position:absolute;left:0;right:0;top:50%;height:calc(var(--unit) * 1.5);transform:translateY(-50%);background:var(--dark);pointer-events:none}
-.waveform{display:block;width:100%;height:100%;overflow:hidden;fill:none;stroke:var(--dark);stroke-width:1}
+.waveform{display:block;min-width:0;min-height:0;width:100%;height:100%;overflow:hidden;fill:none;stroke:var(--dark);stroke-width:1}
 #deck-seek{appearance:none;position:absolute;z-index:1;left:0;top:50%;transform:translateY(-50%);display:block;width:100%;height:calc(var(--unit) * 24);padding:0;border:0;margin:0;background:transparent;touch-action:none;cursor:pointer}
 #deck-seek::-webkit-slider-runnable-track{background:transparent;border:0;height:calc(var(--unit) * 12)}
 #deck-seek::-webkit-slider-thumb{appearance:none;width:calc(var(--unit) * 12);height:calc(var(--unit) * 12);background:transparent;border:0;border-radius:50%}
