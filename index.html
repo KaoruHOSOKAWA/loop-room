@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#dedede"><meta name="description" content="録音・再生・ループ。手のひらのターンテーブル。">
+  <meta name="theme-color" content="#909090"><meta name="description" content="録音・再生・ループ。手のひらのターンテーブル。">
   <title>LOOP ROOM</title><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -22,12 +22,20 @@
     <h1 class="sr-only">LOOP ROOM</h1>
     <section class="deck" aria-label="ターンテーブル">
       <span class="status sr-only" id="status" role="status"><i></i><span>待機</span></span>
+      <div class="waveform-seek">
+        <div class="waveform-lanes">
+        <svg class="waveform" viewBox="0 0 1000 28" preserveAspectRatio="none" role="img" aria-label="左チャンネルの波形"><path id="wave-left"/></svg>
+        <svg class="waveform" viewBox="0 0 1000 28" preserveAspectRatio="none" role="img" aria-label="右チャンネルの波形"><path id="wave-right"/></svg>
+        <span id="wave-playhead" aria-hidden="true"></span>
+        </div>
+        <input id="deck-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="波形の再生位置">
+      </div>
       <div class="record-area"><button id="vinyl" class="vinyl" aria-label="盤を回してスクラッチ"><span id="platter-time" class="platter-time" aria-hidden="true">00:00</span></button></div>
 
       <div class="transport">
         <button id="record" class="transport-button record"><span class="record-dot"></span><span class="sr-only">録音</span></button>
         <button id="play" class="transport-button play"><svg class="icon"><use href="#i-play"/></svg><span class="sr-only">再生</span></button>
-        <button id="stop" class="transport-button stop" aria-label="停止して最初へ"><svg class="icon"><use href="#i-stop"/></svg></button>
+        <button id="stop" class="transport-button cue" aria-label="CUE"><span>CUE</span></button>
         <button id="rewind" class="transport-button rewind" aria-label="巻き戻し（押している間）" aria-pressed="false"><svg class="icon"><use href="#i-rewind"/></svg></button>
       </div>
       <div class="speed-control"><button id="speed-reset" aria-label="再生速度を1.00倍に戻す"><span id="speed-value">1.00×</span></button><input id="speed" type="range" min="-2" max="2" step="0.01" value="0" aria-label="再生速度" aria-orientation="vertical" aria-valuetext="1.00倍"></div>
@@ -54,6 +62,7 @@
   
 </body>
 </html>
+
 
 
 

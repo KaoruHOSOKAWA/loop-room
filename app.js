@@ -3,17 +3,38 @@ const $ = (id) => document.getElementById(id);
 let context, decoder, gain, source, buffer, stream, recorder, analyser, micSource, db;
 const looping = true;
 let playing = false, recording = false, busy = false, rate = 1, offset = 0, recordedAt = 0;
+let cuePosition = 0;
 const player = $('player');
 const reversePlayer = $('reverse-player');
 let playbackBuffer, playbackUrl, playbackVersion = 0;
 
 let rewinding = false, rewindResume = false;
-let scratching = false, scratchResume = false, scratchAngle = 0, scratchVoice, scratchGain, scratchTimer, scratchPointer, scratchMoved = false, scratchReverseOriginal, scratchReverseBuffer;
+let scratching = false, scratchResume = false, scratchAngle = 0, scratchPointer, scratchMoved = false, scratchReverseOriginal, scratchReverseBuffer;
+let scratchNode, scratchModule, scratchLoadedBuffer, scratchCursor = 0;
 let reverseOriginal, reverseUrl, reverseSource, reverseVersion = 0;
 let selectedId = 'demo', tracks = [], chunks = [], toastTimer, recordingLimit;
 let recordingName, renameId;
-let lastDrawAngle, lastMenuDraw = -Infinity, scratchLastAudioAt = -Infinity, scratchLastDirection = 0;
+let lastDrawAngle, lastMenuDraw = -Infinity;
 const vinylElement = $('vinyl'), platterTimeElement = $('platter-time'), seekElement = $('seek'), timeElement = $('time'), optionsElement = $('options-dialog');
+const deckSeekElement = $('deck-seek'), wavePlayheadElement = $('wave-playhead');
+let waveWidth = 0, lastWavePosition;
+new ResizeObserver(entries => { waveWidth = entries[0].contentRect.width; }).observe(wavePlayheadElement.parentElement);
+function waveformPath(samples, columns = 1000, lower = false) {
+  let path = '';
+  for (let column = 0; column < columns; column++) {
+    const start = Math.floor(column * samples.length / columns);
+    const end = Math.max(start + 1, Math.floor((column + 1) * samples.length / columns));
+    let peak = 0;
+    for (let index = start; index < end && index < samples.length; index++) peak = Math.max(peak, Math.abs(samples[index]));
+    const height = Math.min(1, peak) * 28;
+    path += `M${column + .5},${lower ? 0 : 28}V${(lower ? height : 28 - height).toFixed(2)}`;
+  }
+  return path;
+}
+function renderWaveforms() {
+  $('wave-left').setAttribute('d', waveformPath(buffer.getChannelData(0)));
+  $('wave-right').setAttribute('d', waveformPath(buffer.getChannelData(Math.min(1, buffer.numberOfChannels - 1)), 1000, true));
+}
 const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function recordingTimestamp(date = new Date()) {
   const pad = value => String(value).padStart(2, '0');
@@ -38,7 +59,8 @@ async function audio() {
 async function decodeTrack(blob) {
   if (!decoder) {
     const OfflineContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    decoder = new OfflineContext(1, 1, 24000);
+    setupAudio();
+    decoder = new OfflineContext(1, 1, context.sampleRate);
   }
   return decoder.decodeAudioData(await blob.arrayBuffer());
 }
@@ -69,6 +91,7 @@ function update() {
   $('vinyl').classList.toggle('recording', recording); $('play').classList.toggle('active', playing);
   $('record').classList.toggle('active', recording); $('record').querySelector('span:last-child').textContent = recording ? '録音終了' : '録音';
   $('record').disabled = busy || rewinding || scratching; $('play').disabled = busy || rewinding || scratching || recording; $('stop').disabled = busy; $('seek').disabled = recording || busy || rewinding || scratching;
+  deckSeekElement.disabled = recording || busy || rewinding || scratching || !buffer;
   $('import-button').disabled = recording || busy || rewinding || scratching;
   $('rewind').disabled = recording || busy || scratching || !buffer;
   $('rewind').classList.toggle('active', rewinding); $('rewind').setAttribute('aria-pressed', String(rewinding));
@@ -101,13 +124,16 @@ function renderSessions() {
 async function selectTrack(id) {
   if (recording || busy) { toast('録音が終わってから選択できます。'); return; }
   const track = tracks.find(t => t.id === id); if (!track) return;
+  endScratch(false);
   endRewind(false);
   busy = true; stopPlayback(); update();
-  try { await audio(); const next = track.buffer || await decodeTrack(track.blob); track.buffer = next; buffer = next; selectedId = id;
+  try { await audio(); const next = track.buffer || await decodeTrack(track.blob); track.buffer = next; buffer = next; selectedId = id; cuePosition = 0;
     for (const other of tracks) if (other !== track) delete other.buffer;
     playbackBuffer = null; player.removeAttribute('src'); player.load();
     if (playbackUrl) { URL.revokeObjectURL(playbackUrl); playbackUrl = null; }
     await warmReversePlayback();
+    await prepareScratchPlayback();
+    renderWaveforms();
     $('track-title').replaceChildren(document.createTextNode(track.name)); renderSessions();
   } finally { busy = false; update(); }
 }
@@ -174,50 +200,44 @@ async function deleteTrack(track) {
 }
 function rotationAngle(elapsed) { return elapsed * 90; }
 function scratchDelta(previous, next) { return ((next - previous + 540) % 360) - 180; }
-function stopScratchVoice() {
-  clearTimeout(scratchTimer);
-  if (scratchVoice) {
-    scratchGain.gain.cancelScheduledValues(context.currentTime);
-    scratchGain.gain.setTargetAtTime(0, context.currentTime, .003);
-    scratchVoice.stop(context.currentTime + .015);
-    scratchVoice = null;
+async function prepareScratchPlayback() {
+  setupAudio();
+  if (!scratchModule) scratchModule = context.audioWorklet.addModule(new URL('scratch-worklet.js', document.baseURI).href).catch(error => { scratchModule = null; throw error; });
+  await scratchModule;
+  if (!scratchNode) {
+    scratchNode = new AudioWorkletNode(context, 'turntable-scratch', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    scratchNode.connect(gain);
+    scratchNode.onprocessorerror = () => { endScratch(false); handleError(new Error('Scratch processor failed')); };
+  }
+  if (scratchLoadedBuffer !== buffer) {
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
+    await new Promise(resolve => {
+      scratchNode.port.onmessage = event => { if (event.data.type === 'loaded') resolve(); };
+      scratchNode.port.postMessage({ type: 'load', channels, sampleRate: buffer.sampleRate }, channels.map(channel => channel.buffer));
+    });
+    scratchLoadedBuffer = buffer;
   }
 }
 function moveScratch(delta, seconds) {
+  if (!scratchNode || scratchLoadedBuffer !== buffer) return;
   if (!scratching) {
     setupAudio();
     offset = position(); scratchResume = playing;
     scratchAngle = rotationAngle(offset);
+    scratchCursor = offset;
+    scratchNode.port.postMessage({ type: 'start', position: scratchCursor });
     detachSource(); playing = false; scratching = true; update();
-    scratchLastAudioAt = -Infinity; scratchLastDirection = 0;
     audio().catch(handleError);
   }
-  const from = offset;
-
-  offset = ((offset + delta / 90) % buffer.duration + buffer.duration) % buffer.duration;
+  scratchCursor += delta / 90;
+  offset = ((scratchCursor % buffer.duration) + buffer.duration) % buffer.duration;
   scratchAngle = rotationAngle(offset);
-
-  if (Math.abs(delta) < .1) return;
-  const direction = Math.sign(delta);
-  // Keep pointer/rotation updates immediate, but limit audio allocations to 30 per second.
-  if (direction === scratchLastDirection && context.currentTime - scratchLastAudioAt < 1 / 30) return;
-  scratchLastAudioAt = context.currentTime; scratchLastDirection = direction;
-  stopScratchVoice();
-  const voice = context.createBufferSource(), envelope = context.createGain();
-  voice.buffer = delta < 0 ? scratchReverseBuffer : buffer;
-  voice.loop = true;
-  voice.playbackRate.value = Math.max(.1, Math.min(8, Math.abs(delta) / 90 / Math.max(.008, seconds)));
-  envelope.gain.value = 0; envelope.gain.linearRampToValueAtTime(1, context.currentTime + .004);
-  voice.connect(envelope); envelope.connect(gain);
-  voice.onended = () => { voice.disconnect(); envelope.disconnect(); };
-  voice.start(0, delta < 0 ? (buffer.duration - from) % buffer.duration : from);
-  scratchVoice = voice; scratchGain = envelope;
-  scratchTimer = setTimeout(stopScratchVoice, 85);
+  scratchNode.port.postMessage({ type: 'move', position: scratchCursor, seconds });
 }
 function endScratch(resume = true) {
   scratchPointer = null;
   if (!scratching) return;
-  stopScratchVoice(); scratching = false;
+  scratchNode?.port.postMessage({ type: 'stop' }); scratching = false;
   const restart = scratchResume; scratchResume = false;
   if (resume && restart && !busy && !recording) startPlayback(); else update();
 }
@@ -282,6 +302,13 @@ reversePlayer.onended = () => { if (rewinding) offset = 0; };
 function draw() {
   advanceRewind();
   const pos = position(), progress = buffer ? pos / buffer.duration : 0;
+  const seekValue = String(Math.round(progress * 1000));
+  if (deckSeekElement.value !== seekValue) deckSeekElement.value = seekValue;
+  const wavePosition = Math.round(progress * waveWidth * 10) / 10;
+  if (wavePosition !== lastWavePosition) {
+    wavePlayheadElement.style.transform = `translate3d(${wavePosition}px,0,0) translateX(-50%)`;
+    lastWavePosition = wavePosition;
+  }
 
 
   const angle = scratching ? scratchAngle : recording ? rotationAngle((performance.now() - recordedAt) / 1000) : rotationAngle(pos);
@@ -310,10 +337,25 @@ window.addEventListener('blur', () => { endScratch(false); endRewind(false); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { endScratch(false); endRewind(false); } });
 $('play').onclick = async () => { if (busy || recording || rewinding || scratching) return; if (playing) { stopPlayback(false); return; } try { await audio(); startPlayback(); } catch (e) { handleError(e); } };
 $('menu-play').onclick = () => $('play').onclick();
-$('stop').onclick = () => { if (busy) return; endScratch(false); endRewind(false); stopPlayback(); if (recording) endRecording(); };
+$('stop').onclick = () => {
+  if (busy) return;
+  const wasPlaying = playing || (rewinding && rewindResume) || (scratching && scratchResume);
+  endScratch(false); endRewind(false);
+  if (recording) { stopPlayback(); endRecording(); return; }
+  if (!buffer) return;
+  if (wasPlaying) { stopPlayback(false); offset = cuePosition; player.currentTime = cuePosition; }
+  else cuePosition = position();
+  update();
+};
 $('speed').oninput = e => { rate = 2 ** Number(e.target.value); player.preservesPitch = true; player.playbackRate = rate; $('speed-value').textContent = rate.toFixed(2) + '×'; e.target.setAttribute('aria-valuetext', rate.toFixed(2) + '倍'); };
 $('speed-reset').onclick = () => { $('speed').value = '0'; $('speed').oninput({ target: $('speed') }); };
-$('seek').oninput = e => { if (!buffer || recording || busy) return; offset = Number(e.target.value) / 1000 * buffer.duration; if (playing) startPlayback(); };
+function seekTo(value) {
+  if (!buffer || recording || busy || rewinding || scratching) return;
+  offset = Number(value) / 1000 * buffer.duration;
+  if (playing) startPlayback();
+}
+$('seek').oninput = e => seekTo(e.target.value);
+deckSeekElement.oninput = e => seekTo(e.target.value);
 $('import-button').onclick = () => $('import-file').click();
 $('import-file').onchange = async e => {
   const file = e.target.files[0]; e.target.value = ''; if (!file || recording || busy) return;
@@ -378,6 +420,8 @@ async function init() {
     buffer = await decodeTrack(blob);
     tracks = [{ id: 'demo', name: 'Discourse on the Method', duration: buffer.duration, blob, buffer, reverseBlob }];
     await warmReversePlayback();
+    await prepareScratchPlayback();
+    renderWaveforms();
     $('track-title').textContent = tracks[0].name; renderSessions();
   } finally { busy = false; update(); }
   try { db = await openDatabase(); const saved = await database('readonly', store => store.getAll()); tracks.push(...saved.sort((a, b) => a.date - b.date)); renderSessions(); } catch { toast('端末への保存が使えません。録音後は音声をダウンロードしてください。'); }
