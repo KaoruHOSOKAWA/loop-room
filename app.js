@@ -4,6 +4,7 @@ let context, decoder, gain, source, buffer, stream, recorder, analyser, micSourc
 const looping = true;
 let playing = false, recording = false, busy = false, rate = 1, offset = 0, recordedAt = 0;
 let cuePosition = 0;
+let cueHeld = false, cuePreview = false, cueVersion = 0;
 const player = $('player');
 const reversePlayer = $('reverse-player');
 let playbackBuffer, playbackUrl, playbackVersion = 0;
@@ -17,6 +18,8 @@ let recordingName, renameId;
 let lastDrawAngle, lastMenuDraw = -Infinity;
 const vinylElement = $('vinyl'), platterTimeElement = $('platter-time'), seekElement = $('seek'), timeElement = $('time'), optionsElement = $('options-dialog');
 const deckSeekElement = $('deck-seek'), wavePlayheadElement = $('wave-playhead');
+const waveCueElement = $('wave-cue');
+let lastCueProgress;
 let waveWidth = 0, lastWavePosition;
 new ResizeObserver(entries => { waveWidth = entries[0].contentRect.width; }).observe(wavePlayheadElement.parentElement);
 function waveformPath(samples, columns = 1000, lower = false) {
@@ -90,14 +93,15 @@ player.onended = () => { playing = false; offset = 0; update(); };
 function update() {
   $('vinyl').classList.toggle('recording', recording); $('play').classList.toggle('active', playing);
   $('record').classList.toggle('active', recording); $('record').querySelector('span:last-child').textContent = recording ? '録音終了' : '録音';
-  $('record').disabled = busy || rewinding || scratching; $('play').disabled = busy || rewinding || scratching || recording; $('stop').disabled = busy; $('seek').disabled = recording || busy || rewinding || scratching;
-  deckSeekElement.disabled = recording || busy || rewinding || scratching || !buffer;
-  $('import-button').disabled = recording || busy || rewinding || scratching;
-  $('rewind').disabled = recording || busy || scratching || !buffer;
+  $('stop').classList.toggle('active', cueHeld); $('stop').setAttribute('aria-pressed', String(cueHeld));
+  $('record').disabled = busy || rewinding || scratching || cueHeld; $('play').disabled = busy || rewinding || scratching || recording || cueHeld; $('stop').disabled = busy; $('seek').disabled = recording || busy || rewinding || scratching || cueHeld;
+  deckSeekElement.disabled = recording || busy || rewinding || scratching || cueHeld || !buffer;
+  $('import-button').disabled = recording || busy || rewinding || scratching || cueHeld;
+  $('rewind').disabled = recording || busy || scratching || cueHeld || !buffer;
   $('rewind').classList.toggle('active', rewinding); $('rewind').setAttribute('aria-pressed', String(rewinding));
   $('play').querySelector('span').textContent = playing ? '一時停止' : '再生';
   $('play').querySelector('use').setAttribute('href', playing ? '#i-pause' : '#i-play');
-  $('menu-play').disabled = busy || rewinding || scratching || recording || !buffer;
+  $('menu-play').disabled = busy || rewinding || scratching || recording || cueHeld || !buffer;
   $('menu-play').classList.toggle('active', playing);
   $('menu-play').setAttribute('aria-label', playing ? '選択した曲を一時停止' : '選択した曲を再生');
   $('menu-play').querySelector('use').setAttribute('href', playing ? '#i-pause' : '#i-play');
@@ -301,6 +305,11 @@ function endRewind(resume = true) {
 reversePlayer.onended = () => { if (rewinding) offset = 0; };
 function draw() {
   advanceRewind();
+  const cueProgress = buffer ? cuePosition / buffer.duration : 0;
+  if (cueProgress !== lastCueProgress) {
+    waveCueElement.style.left = `${cueProgress * 100}%`;
+    lastCueProgress = cueProgress;
+  }
   const pos = position(), progress = buffer ? pos / buffer.duration : 0;
   const seekValue = String(Math.round(progress * 1000));
   if (deckSeekElement.value !== seekValue) deckSeekElement.value = seekValue;
@@ -333,24 +342,47 @@ $('rewind').addEventListener('keydown', event => { if (event.key === ' ' || even
 $('rewind').addEventListener('keyup', event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); endRewind(); } });
 $('rewind').addEventListener('blur', () => endRewind());
 $('rewind').addEventListener('contextmenu', event => event.preventDefault());
-window.addEventListener('blur', () => { endScratch(false); endRewind(false); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { endScratch(false); endRewind(false); } });
+window.addEventListener('blur', () => { cueUp(); endScratch(false); endRewind(false); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { cueUp(); endScratch(false); endRewind(false); } });
 $('play').onclick = async () => { if (busy || recording || rewinding || scratching) return; if (playing) { stopPlayback(false); return; } try { await audio(); startPlayback(); } catch (e) { handleError(e); } };
 $('menu-play').onclick = () => $('play').onclick();
-$('stop').onclick = () => {
-  if (busy) return;
+function cueDown() {
+  if (busy || cueHeld) return false;
   const wasPlaying = playing || (rewinding && rewindResume) || (scratching && scratchResume);
   endScratch(false); endRewind(false);
-  if (recording) { stopPlayback(); endRecording(); return; }
-  if (!buffer) return;
+  if (recording) { stopPlayback(); endRecording(); return false; }
+  if (!buffer) return false;
+  cueHeld = true;
+  const version = ++cueVersion;
+  cuePreview = !wasPlaying && Math.abs(position() - cuePosition) <= 1 / buffer.sampleRate;
   if (wasPlaying) { stopPlayback(false); offset = cuePosition; player.currentTime = cuePosition; }
-  else cuePosition = position();
+  else if (!cuePreview) cuePosition = position();
+  else {
+    offset = cuePosition;
+    // A release during audio unlock must never start a late preview.
+    audio().then(() => {
+      if (cueHeld && cuePreview && version === cueVersion) startPlayback();
+    }).catch(error => { if (version === cueVersion) { cueUp(); handleError(error); } });
+  }
   update();
-};
+  return true;
+}
+function cueUp() {
+  if (!cueHeld) return;
+  const preview = cuePreview;
+  cueHeld = false; cuePreview = false; cueVersion++;
+  if (preview) { stopPlayback(false); offset = cuePosition; player.currentTime = cuePosition; }
+  update();
+}
+$('stop').addEventListener('pointerdown', event => { if (event.button !== 0 || !event.isPrimary) return; if (cueDown()) { event.preventDefault(); $('stop').setPointerCapture(event.pointerId); } });
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) $('stop').addEventListener(type, cueUp);
+$('stop').addEventListener('keydown', event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); if (!event.repeat) cueDown(); } });
+$('stop').addEventListener('keyup', event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); cueUp(); } });
+$('stop').addEventListener('contextmenu', event => event.preventDefault());
 $('speed').oninput = e => { rate = 2 ** Number(e.target.value); player.preservesPitch = true; player.playbackRate = rate; $('speed-value').textContent = rate.toFixed(2) + '×'; e.target.setAttribute('aria-valuetext', rate.toFixed(2) + '倍'); };
 $('speed-reset').onclick = () => { $('speed').value = '0'; $('speed').oninput({ target: $('speed') }); };
 function seekTo(value) {
-  if (!buffer || recording || busy || rewinding || scratching) return;
+  if (!buffer || recording || busy || rewinding || scratching || cueHeld) return;
   offset = Number(value) / 1000 * buffer.duration;
   if (playing) startPlayback();
 }
@@ -364,7 +396,7 @@ $('import-file').onchange = async e => {
   try { await audio(); const track = await saveTrack(file, file.name.replace(/\.[^.]+$/, '')); busy = false; await selectTrack(track.id); }
   catch (error) { handleError(error); } finally { busy = false; update(); }
 };
-$('open-options').onclick = () => { endScratch(false); endRewind(false); $('options-dialog').showModal(); };
+$('open-options').onclick = () => { cueUp(); endScratch(false); endRewind(false); $('options-dialog').showModal(); };
 $('close-options').onclick = () => $('options-dialog').close();
 $('cancel-rename').onclick = () => $('rename-dialog').close();
 $('rename-form').onsubmit = async event => {
@@ -379,7 +411,7 @@ $('rename-form').onsubmit = async event => {
 };
 $('rename-name').oninput = () => $('rename-name').setCustomValidity('');
 $('vinyl').addEventListener('pointerdown', event => {
-  if (event.button !== 0 || !event.isPrimary || recording || busy || rewinding || !buffer) return;
+  if (event.button !== 0 || !event.isPrimary || recording || busy || rewinding || cueHeld || !buffer) return;
   audio().catch(handleError);
   const rect = $('vinyl').getBoundingClientRect();
   const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;

@@ -23,6 +23,7 @@ button:disabled{cursor:wait}
 #deck-seek::-moz-range-thumb{width:calc(var(--unit) * 12);height:calc(var(--unit) * 12);background:transparent;border:0;border-radius:50%}
 #deck-seek::-moz-range-track{background:transparent;height:calc(var(--unit) * 12);border:0}
 #wave-playhead{position:absolute;top:0;bottom:0;left:0;width:calc(var(--unit) * 1.5);background:var(--light);pointer-events:none;transform:translateX(-50%);will-change:transform}
+#wave-cue{position:absolute;top:0;bottom:0;left:0;border-left:calc(var(--unit) * 1.5) dashed var(--light);pointer-events:none;transform:translateX(-50%)}
 .record-area{grid-column:1;grid-row:2;width:var(--disc);height:var(--disc);overflow:hidden;border-radius:50%}
 .vinyl{width:var(--disc);height:var(--disc);position:relative;background:var(--dark);border-radius:50%;padding:0;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .vinyl::before{content:'Recorder';position:absolute;left:50%;top:50%;width:50%;padding-left:calc(var(--unit) * 38);text-align:left;color:var(--light);font-size:calc(var(--unit) * 24);font-weight:500;line-height:1;transform:translateY(-50%) rotate(var(--angle,0deg));transform-origin:0 50%}
@@ -32,7 +33,7 @@ button:disabled{cursor:wait}
 .transport-button.active,.transport-button.selected{background:var(--dark);color:var(--light)}
 .cue{font-size:calc(var(--unit) * 16);font-weight:600}
 .cue:active{background:var(--dark);color:var(--light)}
-.rewind{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.rewind,.cue{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .transport .icon{width:calc(var(--unit) * 28);height:calc(var(--unit) * 28)}
 .record-dot{width:calc(var(--unit) * 12);height:calc(var(--unit) * 12);background:var(--dark);border-radius:50%}
 .record.active .record-dot{border-radius:calc(var(--unit) * 2);background:var(--light)}
